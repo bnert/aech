@@ -1,10 +1,12 @@
 # aech
-A `fetch` api/client for Clojure(Script)
+A `fetch`-ish api/client for Clojure(Script), based on clojure.core.async idioms.
 
-It supports both HTTP/1.1 and HTTP/2, with asynchronous execution being the default.
+It supports both HTTP/1.1 and HTTP/2.
 
-This API is meant to align with `fetch` browser API, and bring those idioms
-into a client which can be used on the server, node.js, or browser.
+The goal of this library is to provide a simple, `fetch`-like API which
+can be used on the JVM, node, and browser, with async support using
+channel based communication via `clojure.core.async`.
+
 
 ## Kudos
 This project was intially forked from [`hato`](https://github.com/gnarroway/hato)
@@ -12,6 +14,7 @@ This project was intially forked from [`hato`](https://github.com/gnarroway/hato
 
 ## Status
 This is exeperimental, still working out adapting the `fetch` api to clojure.
+
 Additionally, I haven't started on the cljs side, though that work will be
 more or less a thin layer around globally available `fetch`
 

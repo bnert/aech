@@ -1,10 +1,15 @@
 (ns aech.core
   (:require
-    [clojure.core.async :refer [take!]]
+    [clojure.core.async :refer [chan
+                                dropping-buffer
+                                put!
+                                take!
+                                timeout]]
     [aech.decompression :refer [decompress-body]]
     [aech.http-status :refer [status->text]]
+    [aech.protos.unwrappable :refer [unwrap]]
     [aech.protos.serde :refer [deserialize serialize]]
-    [aech.protos.unwrapabble :refer [unwrap]]
+    [aech.signal :refer [abort-signal!]]
     [aech.serde :as serde]
     [clojure.string :as str])
   (:import
@@ -50,8 +55,6 @@
    kind
    url])
 
-(defn promise? [res]
-  (instance? clojure.lang.IPending res))
 
 (defn java-list? [maybe-list]
   (instance? java.util.List maybe-list))
@@ -116,14 +119,6 @@
   [resp]
   (update resp :body #(deserialize serde/*json* %)))
 
-(defmethod deserialize-body "application/xml"
-  [resp]
-  (update resp :body #(deserialize serde/*xml* %)))
-
-(defmethod deserialize-body "text/html"
-  [resp]
-  (update resp :body #(deserialize serde/*html* %)))
-
 (defmethod deserialize-body "text/plain"
   [resp]
   (update resp :body slurp))
@@ -152,6 +147,8 @@
      :statusText (status->text (.statusCode resp))
      :kind       :basic})) ; or :cors
 
+(def ^:dynamic *timeout* 10000) ; 10s, long but sufficient
+
 (def ^:dynamic *auto-decompress* true)
 
 (def ^:dynamic *auto-serialize* true)
@@ -177,10 +174,6 @@
       (cond
         (= ct "application/json")
           (update r :body #(serialize serde/*json* %))
-        (= ct "application/xml")
-          (update r :body #(serialize serde/*xml* %))
-        (= ct "text/html")
-          (update r :body #(serialize serde/*html* %))
         :else
           r))))
 
@@ -189,27 +182,30 @@
    (fetch* *default-client* r))
   ([^HttpClient client req]
    (let [req    (maybe-serialize-body req)
-         result (promise)
+         result (chan (dropping-buffer 1))
+         signal (if (:signal req)
+                  (:signal req)
+                  (abort-signal! (timeout *timeout*)))
          fut    (.sendAsync client
                             ^HttpRequest (Request->HttpRequest req)
                             ^InputStream
                              (HttpResponse$BodyHandlers/ofInputStream))]
-     ;; For some reason this is throwing?
-     (when (req :signal)
-       (take! (unwrap (req :signal))
+     (when signal
+       (take! (unwrap signal)
               (fn [_]
-                (.cancel ^CompletableFuture fut))))
+                (.cancel ^CompletableFuture fut)
+                (put! result {:ok false :error "aborted"}))))
      (-> fut
          (.thenApply
            (as-func
              (fn [res]
-               (deliver result
-                        (cond-> (->Response' res)
-                          *auto-decompress*  decompress-body
-                          *auto-deserialize* deserialize-body)))))
+               (put! result
+                     (cond-> (->Response' res)
+                       *auto-decompress*  decompress-body
+                       *auto-deserialize* deserialize-body)))))
          (.exceptionally
            (as-func
-             #(deliver result %))))
+             #(put! result {:ok false :error %}))))
      result)))
 
 (defn fetch!

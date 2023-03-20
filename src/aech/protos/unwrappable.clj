@@ -1,4 +1,4 @@
-(ns aech.protos.unwrapabble)
+(ns aech.protos.unwrappable)
 
 (defprotocol Unwrappable
   (unwrap [this]

@@ -11,9 +11,11 @@ pom.xml.asc
 .lein-plugins/
 .lein-failures
 .nrepl-port
+.shadow-cljs/
 .cpcache/
 *.iml
 .idea/
 .clj-kondo
 .lsp
 .test-data
+node_modules/

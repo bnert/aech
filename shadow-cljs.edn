@@ -1,0 +1,17 @@
+{:source-paths ["src" "test"]
+ :builds
+ {:node-test
+  {:target     :node-test
+   :output-to  "target/node-tests.js"
+   :output-dir "target/node-tests/"
+   :ns-regexp  "aech.*-test$"
+   :autorun    true
+
+   :compiler-options
+   {:output-feature-set :es2020
+    :output-wrapper false
+    :source-map true
+    :source-map-include-sources-content true
+    :source-map-detail-level :all
+    :warnings {:fn-deprecated false}}}}}
+

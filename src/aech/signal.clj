@@ -1,6 +1,6 @@
 (ns aech.signal
   (:require
-    [aech.protos.unwrapabble :refer [Unwrappable]]
+    [aech.protos.unwrappable :refer [Unwrappable]]
     [clojure.core.async :refer [chan dropping-buffer put!]]))
 
 (defprotocol Abortable
@@ -16,7 +16,9 @@
   (unwrap [_this]
     signal))
 
-(defn abort-signal! []
-  (map->AbortSignal
-    {:signal (chan (dropping-buffer 1))}))
+(defn abort-signal!
+  ([]
+   (abort-signal! (chan (dropping-buffer 1))))
+  ([signal]
+   (map->AbortSignal {:signal signal})))
 

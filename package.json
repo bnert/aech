@@ -1,0 +1,28 @@
+{
+  "name": "aech",
+  "version": "0.1.0",
+  "description": "Clojure(Script) fetch api",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "shadow-cljs compile node-test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bnert/aech.git"
+  },
+  "keywords": [
+    "cljs"
+  ],
+  "author": "Brent Soles <brent@soles.dev>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/bnert/aech/issues"
+  },
+  "homepage": "https://github.com/bnert/aech#readme",
+  "devDependencies": {
+    "shadow-cljs": "^2.22.2"
+  }
+}
