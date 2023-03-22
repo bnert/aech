@@ -1,17 +1,66 @@
 (ns aech.core
   (:require
-    [clojure.core.async :refer [go
-                                chan
-                                dropping-buffer
-                                put!
-                                timeout]]
-    [clojure.core.async.interop :refer-macros [<p!]]))
+    aech.spec 
+    [aech.protos.serde :refer [deserialize]]
+    [aech.serde :as serde]
+    [cljs.spec.alpha :as s]
+    [clojure.core.async :refer [go take!]]
+    [clojure.core.async.interop :refer-macros [<p!]]
+    [clojure.string :as str]))
 
 (def ^:dynamic *timeout* 10000)
 
 (def ^:dynamic *auto-serialize* true)
 
 (def ^:dynamic *auto-deserialize* true)
+
+(def ^:dynamic *json-content-types* #{"application/json"})
+
+(def ^:dynamic *text-content-types* #{"text/html" "text/plain"})
+
+(def ^:dynamic *json* serde/*json*)
+
+(def ^:dynamic *auto-decode-responses*
+  #{:json :text})
+
+(defn error->response-map [e]
+  {:status     0
+   :ok         false
+   :body       (.toString ^js e)
+   :bodyUsed   true
+   :redirected false
+   :statusText "client error or network error"
+   :url        ""
+   :type       :error})
+
+(defn json? [response']
+  (let [decode?      (contains? *auto-decode-responses* :json)
+        content-type (get-in response' [:headers "content-type"] "")]
+    (and decode?
+        (contains? *json-content-types* content-type))))
+
+(defn text? [response']
+  (let [decode?      (contains? *auto-decode-responses* :text)
+        content-type (get-in response' [:headers "content-type"] "")]
+    (and decode?
+         (contains? *text-content-types* content-type))))
+
+(defn body<-json [response' ^js response]
+  (-> (.json response)
+      (.then
+        (fn [json-body]
+          (-> response'
+              (assoc :body (deserialize *json* json-body))
+              (assoc :bodyUsed true))))
+      (.catch
+        error->response-map)))
+
+(defn body<-text [response' ^js response]
+  (-> (.text response)
+      (.then
+        (fn [t]
+          (assoc response' :body t)))
+      (.catch error->response-map)))
 
 (defn maybe-serialize-body [r]
   (if-not *auto-serialize*
@@ -28,9 +77,9 @@
 
 (defn Headers->map [^js/Headers h]
   (let [result (atom {})] ;lol not good
-    (.forEach h
+    (.forEach ^js h
               (fn [v k]
-                (swap! result assoc k v)))
+                (swap! result assoc (str/lower-case k) v)))
     @result))
 
 (defn Response->map [^js/Response r]
@@ -44,25 +93,44 @@
    :kind       (.-type r)
    :url        (.-url r)})
 
+
+(def ^:dynamic *default-client* ^js js/fetch)
+
 ; out of the gate, only going to support text/json payloads
-(defn fetch* [req]
-  (let [req (maybe-serialize-body req)]
+(defn fetch*
+  [req]
+  {:pre [(s/valid? :aech/request req)]}
+  (let [signal?          (get req :signal)
+        abort-controller ^js (js/AbortController.)]
     (go
+      (when signal?
+        (take! signal?
+               (fn [_]
+                 (.abort abort-controller))))
       (try
-        (let [resp (<p! (js/fetch (:url req)
-                                  (clj->js (dissoc req :url))))
-              resp' (Response->map resp)]
-          (if *auto-deserialize*
-            (case (get (resp' :headers) "content-type")
-              "application/json"
-                (let [j (<p! (.json resp))
-                      j (js->clj j)]
-                  (assoc (Response->map resp) :body j))
-              (let [t (<p! (.text resp))]
-                (assoc (Response->map resp) :body t)))
-            resp))
-        (catch js/Error error
-          {:ok false :error error})))))
+        (let [response
+              (<p! (*default-client*
+                     (req :url)
+                     (clj->js
+                       (-> (dissoc req :url)
+                           (assoc :signal (.-signal abort-controller))))))
+              response' (Response->map response)]
+          (<p!
+            (cond
+              (json? response')
+                (body<-json response' response)
+              (text? response')
+                (body<-text response' response)
+              :else (.resolve js/Promise response))))
+          (catch js/Error e
+            {:status     0
+             :ok         false
+             :body       (.toString ^js e)
+             :bodyUsed   true
+             :redirected false
+             :statusText "client error or network error"
+             :url        (req :url)
+             :type       :error})))))
 
 (defn fetch!
   "Fetches remote resource for url.
